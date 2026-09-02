@@ -1,0 +1,6 @@
+{
+  "name": "Attendance Management System",
+  "description": "Modern full-stack employee attendance and time tracking application with role-based access control, live check-in/out, logs management, approval workflow, and payroll reports export.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
