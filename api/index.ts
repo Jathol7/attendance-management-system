@@ -4,19 +4,16 @@ import { initializeDatabase } from '../server/db';
 
 const app = express();
 
-// Initialize Database on cold start
-initializeDatabase();
+// Prevent cold-start crashes if filesystem is read-only
+try {
+  initializeDatabase();
+} catch (err) {
+  console.error('Failed to initialize local DB on Vercel runtime:', err);
+}
 
-// Middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
-// Mount API routes
 app.use('/api', apiRouter);
-
-// Health check endpoint
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
 
 export default app;

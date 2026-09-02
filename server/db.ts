@@ -20,12 +20,18 @@ interface DatabaseSchema {
   };
 }
 
-const DATA_DIR = path.resolve(process.cwd(), 'data');
+// Detect Vercel Environment and safely route DB path to writable /tmp directory
+const isVercel = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
+const DATA_DIR = isVercel ? '/tmp' : path.resolve(process.cwd(), 'data');
 const DB_FILE = path.resolve(DATA_DIR, 'attendance_db.json');
 
-// Ensure data directory exists
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+// Ensure data directory exists (Safely handled)
+try {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+} catch (e) {
+  console.warn('Could not create data directory, using in-memory fallback:', e);
 }
 
 let dbCache: DatabaseSchema | null = null;
@@ -74,65 +80,24 @@ export function initializeDatabase(): DatabaseSchema {
   // Seed default master data
   const salt = bcrypt.genSaltSync(10);
   const adminPasswordHash = bcrypt.hashSync(DEFAULT_ADMIN_PASSWORD, salt);
-  const userPasswordHash = bcrypt.hashSync('Password@123', salt);
-  const tempPasswordHash = bcrypt.hashSync('Welcome@2026', salt);
 
   const initialUsers: DBUser[] = [
-  {
-    id: 'usr-admin-1',
-    name: 'Attendify Admin',
-    email: DEFAULT_ADMIN_EMAIL, // hammadarshad470@gmail.com
-    role: 'admin',
-    department: 'Software Engineering',
-    isFirstLogin: false,
-    status: 'active',
-    createdAt: new Date().toISOString(),
-    jobTitle: 'System Administrator',
-    avatarColor: 'bg-indigo-600',
-    passwordHash: adminPasswordHash,
-  }
-  // Demo employees removed
-];
+    {
+      id: 'usr-admin-1',
+      name: 'Attendify Admin',
+      email: DEFAULT_ADMIN_EMAIL,
+      role: 'admin',
+      department: 'Software Engineering',
+      isFirstLogin: false,
+      status: 'active',
+      createdAt: new Date().toISOString(),
+      jobTitle: 'System Administrator',
+      avatarColor: 'bg-indigo-600',
+      passwordHash: adminPasswordHash,
+    }
+  ];
 
-  const today = getTodayDateString();
   const sampleLogs: AttendanceLog[] = [];
-
-  // Generate 7 days of realistic past records for active employees
-  const activeStaff = initialUsers.filter(u => u.status === 'active' && u.id !== 'usr-admin-1');
-  for (let d = 1; d <= 7; d++) {
-    const pastDate = getTodayDateString(-d);
-    activeStaff.forEach((emp, index) => {
-      // simulate occasional absence or full day
-      if ((d + index) % 7 === 0) {
-        // Absent day
-        return;
-      }
-      const inHour = 8 + (index % 2);
-      const inMin = 45 + (index * 7) % 15;
-      const outHour = 17 + (index % 2);
-      const outMin = 10 + (index * 11) % 40;
-      const inTime = `${String(inHour).padStart(2, '0')}:${String(inMin).padStart(2, '0')}:00`;
-      const outTime = `${String(outHour).padStart(2, '0')}:${String(outMin).padStart(2, '0')}:00`;
-      const hours = calculateHours(inTime, outTime);
-
-      const isModified = d === 2 && index === 0;
-      sampleLogs.push({
-        id: `log-past-${d}-${emp.id}`,
-        userId: emp.id,
-        userName: emp.name,
-        userEmail: emp.email,
-        department: emp.department,
-        date: pastDate,
-        checkInTime: inTime,
-        checkOutTime: outTime,
-        totalHours: hours,
-        status: 'checked_out',
-        modifiedByAdmin: isModified,
-        adminNote: isModified ? 'Corrected check-out time per biometric badge sync' : undefined,
-        location: index % 2 === 0 ? 'Headquarters Office' : 'Remote - VPN Secure',
-      });
-    });
-  }
 
   dbCache = {
     users: initialUsers,
@@ -161,7 +126,7 @@ export function saveDatabase(data: DatabaseSchema): void {
     dbCache = data;
     fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf-8');
   } catch (err) {
-    console.error('Failed to write database file', err);
+    console.warn('Filesystem write ignored on serverless runtime:', err);
   }
 }
 
@@ -225,12 +190,12 @@ export const db = {
   },
 
   resetAndSeed: () => {
-    if (fs.existsSync(DB_FILE)) {
-      try {
+    try {
+      if (fs.existsSync(DB_FILE)) {
         fs.unlinkSync(DB_FILE);
-      } catch {
-        // ignore
       }
+    } catch {
+      // ignore unlink error in serverless environment
     }
     dbCache = null;
     return initializeDatabase();
